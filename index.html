@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>مدير البطولات الاحترافي</title>
+    <title> البطولات الطوقي</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -21,6 +21,10 @@
                     animation: {
                         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
                         'bounce-slow': 'bounce 2s infinite',
+                        'goal-pulse': 'goalPulse 0.8s ease-out',
+                        'penalty-success': 'penaltySuccess 0.6s ease-out',
+                        'penalty-fail': 'penaltyFail 0.6s ease-out',
+                        'time-up': 'timeUp 1s ease-out',
                     }
                 }
             }
@@ -127,13 +131,137 @@
             0% { transform: scale(0.5); opacity: 0; }
             100% { transform: scale(1); opacity: 1; }
         }
+
+        /* New Animations */
+        @keyframes goalPulse {
+            0% { transform: scale(0.8); opacity: 0; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        @keyframes penaltySuccess {
+            0% { transform: scale(0.5) rotate(-10deg); opacity: 0; }
+            70% { transform: scale(1.1) rotate(5deg); opacity: 1; }
+            100% { transform: scale(1) rotate(0deg); opacity: 1; }
+        }
+
+        @keyframes penaltyFail {
+            0% { transform: scale(1) rotate(0deg); opacity: 1; }
+            50% { transform: scale(0.8) rotate(10deg); opacity: 0.7; }
+            100% { transform: scale(1) rotate(0deg); opacity: 1; }
+        }
+
+        @keyframes timeUp {
+            0% { transform: scale(1); background-color: transparent; }
+            50% { transform: scale(1.05); background-color: rgba(245, 158, 11, 0.2); }
+            100% { transform: scale(1); background-color: rgba(245, 158, 11, 0.1); }
+        }
+
+        .goal-animation {
+            animation: goalPulse 0.8s ease-out;
+        }
+
+        .time-up-animation {
+            animation: timeUp 1s ease-out;
+        }
+
+        .penalty-shootout-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 6px;
+        }
+
+        .penalty-shot {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .penalty-shot.success {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            box-shadow: 0 4px 8px rgba(16, 185, 129, 0.4);
+        }
+
+        .penalty-shot.fail {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+            box-shadow: 0 4px 8px rgba(239, 68, 68, 0.4);
+        }
+
+        .penalty-shot.pending {
+            background: rgba(148, 163, 184, 0.2);
+            color: rgba(148, 163, 184, 0.5);
+            border: 2px dashed rgba(148, 163, 184, 0.3);
+        }
+
+        .penalty-shot.current {
+            border: 3px solid #f59e0b;
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.5);
+            transform: scale(1.1);
+        }
+
+        /* Goal Notification Styles */
+        .goal-notification {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 30;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-300">
+    <!-- Audio Elements -->
+    <audio id="whistleStart" preload="auto">
+        <source src="https://assets.mixkit.co/sfx/preview/mixkit-football-whistle-316.mp3" type="audio/mp3">
+    </audio>
+    <audio id="teamAdded" preload="auto">
+        <source src="https://assets.mixkit.co/sfx/preview/mixkit-achievement-bell-600.mp3" type="audio/mp3">
+    </audio>
+    <audio id="matchEnd" preload="auto">
+        <source src="https://assets.mixkit.co/sfx/preview/mixkit-winning-chimes-2015.mp3" type="audio/mp3">
+    </audio>
+    <audio id="coinSpin" preload="auto">
+        <source src="https://assets.mixkit.co/sfx/preview/mixkit-coin-spin-1994.mp3" type="audio/mp3">
+    </audio>
+    <audio id="goalScore" preload="auto">
+        <source src="https://assets.mixkit.co/sfx/preview/mixkit-crowd-cheer-loud-2071.mp3" type="audio/mp3">
+    </audio>
+    <audio id="championWin" preload="auto">
+        <source src="https://assets.mixkit.co/sfx/preview/mixkit-winning-fanfare-2018.mp3" type="audio/mp3">
+    </audio>
+    <audio id="penaltySuccess" preload="auto">
+        <source src="https://assets.mixkit.co/sfx/preview/mixkit-soccer-ball-hit-2076.mp3" type="audio/mp3">
+    </audio>
+    <audio id="penaltyFail" preload="auto">
+        <source src="https://assets.mixkit.co/sfx/preview/mixkit-balloon-pop-2816.mp3" type="audio/mp3">
+    </audio>
+
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useRef, useMemo } = React;
+
+        // Audio Controller
+        const playSound = (soundId) => {
+            try {
+                const audio = document.getElementById(soundId);
+                if (audio) {
+                    audio.currentTime = 0;
+                    audio.play().catch(e => console.log("Audio play failed:", e));
+                }
+            } catch (e) {
+                console.log("Audio error:", e);
+            }
+        };
 
         const Icon = ({ name, size = 20, className = "" }) => {
             useEffect(() => {
@@ -168,23 +296,55 @@
             );
         };
 
-        const MatchTimer = ({ initialDuration, isFinished, isDarkMode, onTimeUp, onStateChange }) => {
+        const GoalNotification = ({ teamName, minute }) => {
+            const [visible, setVisible] = useState(true);
+
+            useEffect(() => {
+                const timer = setTimeout(() => {
+                    setVisible(false);
+                }, 3000);
+
+                return () => clearTimeout(timer);
+            }, []);
+
+            if (!visible) return null;
+
+            return (
+                <div className="goal-notification goal-animation">
+                    <div className="bg-gradient-to-r from-amber-500 to-yellow-500 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3">
+                        <Icon name="goal" size={20} className="text-white" />
+                        <span className="font-black text-lg">{teamName}</span>
+                        <span className="text-sm bg-white/20 px-3 py-1 rounded-full">{minute}'</span>
+                    </div>
+                </div>
+            );
+        };
+
+        const MatchTimer = ({ initialDuration, isFinished, isDarkMode, onTimeUp, onStateChange, matchId, onGoalScored, matchTime }) => {
             const [timeLeft, setTimeLeft] = useState(initialDuration * 60);
             const [isActive, setIsActive] = useState(false);
             const timerRef = useRef(null);
 
             useEffect(() => {
                 if (isActive && timeLeft > 0) {
-                    timerRef.current = setInterval(() => setTimeLeft(p => p - 1), 1000);
+                    timerRef.current = setInterval(() => {
+                        setTimeLeft(p => p - 1);
+                    }, 1000);
                 } else if (timeLeft === 0 && isActive) {
                     setIsActive(false);
                     clearInterval(timerRef.current);
                     onTimeUp();
+                    playSound('matchEnd');
                 }
                 return () => clearInterval(timerRef.current);
             }, [isActive, timeLeft]);
 
-            useEffect(() => { onStateChange && onStateChange(isActive); }, [isActive]);
+            useEffect(() => { 
+                onStateChange && onStateChange(isActive); 
+                if (isActive) {
+                    playSound('whistleStart');
+                }
+            }, [isActive]);
 
             const formatTime = (s) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
             const progress = (timeLeft / (initialDuration * 60)) * 100;
@@ -221,6 +381,186 @@
             );
         };
 
+        const PenaltyShootoutSection = ({ match, onPenaltyComplete }) => {
+            const [penaltyState, setPenaltyState] = useState({
+                team1: { id: match.team1.id, name: match.team1.name, score: 0, shots: [] },
+                team2: { id: match.team2.id, name: match.team2.name, score: 0, shots: [] },
+                currentTeam: match.team1.id,
+                currentShot: 1,
+                winner: null,
+                isComplete: false
+            });
+
+            const totalShots = 5;
+            const winningScore = 6;
+
+            const takeShot = (success) => {
+                setPenaltyState(prev => {
+                    const newState = { ...prev };
+                    const teamKey = prev.currentTeam === match.team1.id ? 'team1' : 'team2';
+                    
+                    // Add shot result
+                    newState[teamKey].shots.push({
+                        number: prev.currentShot,
+                        success: success,
+                        timestamp: Date.now()
+                    });
+
+                    // Update score if successful
+                    if (success) {
+                        newState[teamKey].score += 1;
+                        playSound('penaltySuccess');
+                    } else {
+                        playSound('penaltyFail');
+                    }
+
+                    // Check for winner
+                    if (newState[teamKey].score >= winningScore && 
+                        newState[teamKey].score > newState[teamKey === 'team1' ? 'team2' : 'team1'].score + (totalShots - prev.currentShot)) {
+                        newState.winner = newState[teamKey];
+                        newState.isComplete = true;
+                        // Update match score
+                        if (newState.winner.id === match.team1.id) {
+                            onPenaltyComplete(match.id, 1);
+                        } else {
+                            onPenaltyComplete(match.id, 2);
+                        }
+                    }
+
+                    // Switch teams or advance shot
+                    if (prev.currentTeam === match.team1.id) {
+                        newState.currentTeam = match.team2.id;
+                    } else {
+                        newState.currentTeam = match.team1.id;
+                        newState.currentShot = prev.currentShot + 1;
+                    }
+
+                    // Check if all shots taken
+                    if (prev.currentShot === totalShots && !newState.isComplete) {
+                        if (newState.team1.score > newState.team2.score) {
+                            newState.winner = newState.team1;
+                        } else if (newState.team2.score > newState.team1.score) {
+                            newState.winner = newState.team2;
+                        } else {
+                            // Draw - continue sudden death
+                            newState.currentShot = totalShots + 1;
+                        }
+                        if (newState.winner) {
+                            newState.isComplete = true;
+                            if (newState.winner.id === match.team1.id) {
+                                onPenaltyComplete(match.id, 1);
+                            } else {
+                                onPenaltyComplete(match.id, 2);
+                            }
+                        }
+                    }
+
+                    return newState;
+                });
+            };
+
+            const renderShotCircles = (team) => {
+                const circles = [];
+                for (let i = 1; i <= Math.max(totalShots, penaltyState.currentShot); i++) {
+                    const shot = team.shots[i - 1];
+                    circles.push(
+                        <div 
+                            key={i}
+                            className={`penalty-shot ${
+                                shot ? (shot.success ? 'success animate-penalty-success' : 'fail animate-penalty-fail') : 'pending'
+                            } ${!shot && penaltyState.currentTeam === team.id && penaltyState.currentShot === i ? 'current' : ''}`}
+                        >
+                            {shot ? (shot.success ? '✓' : '✗') : i}
+                        </div>
+                    );
+                }
+                return circles;
+            };
+
+            if (penaltyState.isComplete && penaltyState.winner) {
+                return (
+                    <div className="mt-4 p-4 bg-gradient-to-r from-emerald-500/10 to-green-500/10 rounded-2xl border border-emerald-500/20">
+                        <div className="text-center">
+                            <div className="flex items-center justify-center gap-3 mb-2">
+                                <Icon name="trophy" size={20} className="text-amber-500" />
+                                <span className="font-black text-lg text-emerald-600">الفائز بركلات الترجيح</span>
+                            </div>
+                            <div className="text-2xl font-black text-slate-900 dark:text-white">{penaltyState.winner.name}</div>
+                            <div className="text-sm opacity-70 mt-1">
+                                النتيجة: {penaltyState.team1.score} - {penaltyState.team2.score}
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="mt-4 p-4 bg-gradient-to-r from-amber-500/5 to-yellow-500/5 rounded-2xl border border-amber-500/10">
+                    <div className="text-center mb-4">
+                        <div className="flex items-center justify-center gap-2 mb-2">
+                            <Icon name="target" size={18} className="text-amber-500" />
+                            <span className="font-black text-amber-600">ركلات الترجيح</span>
+                            <Icon name="target" size={18} className="text-amber-500" />
+                        </div>
+                        <div className="text-xs opacity-70">أول من يسجل {winningScore} يفوز</div>
+                    </div>
+
+                    <div className="space-y-4">
+                        {/* Score Display */}
+                        <div className="flex justify-between items-center">
+                            <div className="text-center">
+                                <div className="text-xl font-black">{penaltyState.team1.name}</div>
+                                <div className="text-3xl font-black text-emerald-500 mt-1">{penaltyState.team1.score}</div>
+                            </div>
+                            <div className="text-center">
+                                <div className="text-lg font-black opacity-50">VS</div>
+                                <div className="text-xs font-bold opacity-30 mt-1">الركلة {penaltyState.currentShot}</div>
+                            </div>
+                            <div className="text-center">
+                                <div className="text-xl font-black">{penaltyState.team2.name}</div>
+                                <div className="text-3xl font-black text-emerald-500 mt-1">{penaltyState.team2.score}</div>
+                            </div>
+                        </div>
+
+                        {/* Shot Progress */}
+                        <div className="space-y-3">
+                            <div>
+                                <div className="text-xs font-bold opacity-70 mb-2 text-right">{penaltyState.team1.name}</div>
+                                <div className="penalty-shootout-grid">
+                                    {renderShotCircles(penaltyState.team1)}
+                                </div>
+                            </div>
+
+                            <div>
+                                <div className="text-xs font-bold opacity-70 mb-2 text-right">{penaltyState.team2.name}</div>
+                                <div className="penalty-shootout-grid">
+                                    {renderShotCircles(penaltyState.team2)}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Controls */}
+                        <div className="flex gap-2 pt-2">
+                            <button 
+                                onClick={() => takeShot(true)}
+                                className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white p-3 rounded-xl font-black text-sm shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2"
+                            >
+                                <Icon name="check-circle" size={16} />
+                                تم التسجيل
+                            </button>
+                            <button 
+                                onClick={() => takeShot(false)}
+                                className="flex-1 bg-red-500 hover:bg-red-600 text-white p-3 rounded-xl font-black text-sm shadow-lg shadow-red-500/20 flex items-center justify-center gap-2"
+                            >
+                                <Icon name="x-circle" size={16} />
+                                لم يتم التسجيل
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         function App() {
             const [isDarkMode, setIsDarkMode] = useState(() => {
                 const savedTheme = localStorage.getItem('tm_theme');
@@ -252,14 +592,19 @@
             });
 
             // Archive State
-            const [activeArchiveCard, setActiveArchiveCard] = useState(null); // ID of card with delete option visible
-            const [confirmDeleteRound, setConfirmDeleteRound] = useState(null); // Round number to delete
+            const [activeArchiveCard, setActiveArchiveCard] = useState(null);
+            const [confirmDeleteRound, setConfirmDeleteRound] = useState(null);
+
+            // Goals and Penalty State
+            const [goalsHistory, setGoalsHistory] = useState({});
+            const [goalNotification, setGoalNotification] = useState(null);
+            const [timeUpMatches, setTimeUpMatches] = useState({});
 
             const [activeMatches, setActiveMatches] = useState({});
             const [winnerTeam, setWinnerTeam] = useState(null);
 
             useEffect(() => {
-                const saved = localStorage.getItem('tournament_pro_data_v9');
+                const saved = localStorage.getItem('tournament_pro_data_v11');
                 if (saved) {
                     const parsed = JSON.parse(saved);
                     setTeams(parsed.teams || []);
@@ -267,12 +612,21 @@
                     setSettings(parsed.settings || { matchDuration: 10, winningPoints: 20 });
                     setTargetRound(parsed.targetRound || 1);
                     setManualDuration(parsed.settings?.matchDuration || 10);
+                    setGoalsHistory(parsed.goalsHistory || {});
+                    setTimeUpMatches(parsed.timeUpMatches || {});
                 }
             }, []);
 
             useEffect(() => {
-                localStorage.setItem('tournament_pro_data_v9', JSON.stringify({ teams, matches, settings, targetRound }));
-            }, [teams, matches, settings, targetRound]);
+                localStorage.setItem('tournament_pro_data_v11', JSON.stringify({ 
+                    teams, 
+                    matches, 
+                    settings, 
+                    targetRound,
+                    goalsHistory,
+                    timeUpMatches
+                }));
+            }, [teams, matches, settings, targetRound, goalsHistory, timeUpMatches]);
 
             useEffect(() => {
                 if (isDarkMode) {
@@ -293,11 +647,53 @@
                 });
             };
 
-            const updateScore = (matchId, team, delta) => {
+            const updateScore = (matchId, team, delta, minute = null) => {
                 setMatches(prev => prev.map(m => {
                     if (m.id === matchId) {
                         const field = team === 1 ? 'score1' : 'score2';
-                        return { ...m, [field]: Math.max(0, m[field] + delta) };
+                        const newScore = Math.max(0, m[field] + delta);
+                        
+                        // If goal scored (positive delta)
+                        if (delta > 0) {
+                            // Play goal sound
+                            playSound('goalScore');
+                            
+                            // Get current time
+                            const currentTime = m.duration * 60 - (activeMatches[matchId]?.timeLeft || m.duration * 60);
+                            const goalMinute = minute || Math.floor(currentTime / 60);
+                            
+                            // Get team name
+                            const teamName = team === 1 ? m.team1.name : m.team2.name;
+                            
+                            // Show goal notification
+                            setGoalNotification({
+                                matchId,
+                                teamName,
+                                minute: goalMinute
+                            });
+                            
+                            // Remove notification after 3 seconds
+                            setTimeout(() => {
+                                setGoalNotification(prev => prev?.matchId === matchId ? null : prev);
+                            }, 3000);
+                            
+                            // Record goal with minute
+                            setGoalsHistory(prevHistory => {
+                                const matchHistory = prevHistory[matchId] || [];
+                                return {
+                                    ...prevHistory,
+                                    [matchId]: [...matchHistory, {
+                                        team,
+                                        teamName: teamName,
+                                        minute: goalMinute,
+                                        timestamp: Date.now(),
+                                        score: newScore
+                                    }]
+                                };
+                            });
+                        }
+                        
+                        return { ...m, [field]: newScore };
                     }
                     return m;
                 }));
@@ -307,6 +703,7 @@
                 setMatches(prev => prev.filter(m => m.id !== id));
                 setActiveArchiveCard(null);
             };
+            
             const deleteRound = (round) => {
                 setMatches(prev => prev.filter(m => m.round !== round));
                 setConfirmDeleteRound(null);
@@ -315,6 +712,7 @@
             const handleCoinFlip = () => {
                 if (coinState.flipping) return;
                 setCoinState(prev => ({ ...prev, flipping: true, result: null, winner: null }));
+                playSound('coinSpin');
                 const isHeads = Math.random() > 0.5;
                 const result = isHeads ? 'heads' : 'tails';
                 setTimeout(() => {
@@ -325,11 +723,66 @@
                     else winner = t2Name;
                     setCoinState(prev => ({ ...prev, flipping: false, result, winner }));
                     triggerConfetti();
+                    if (winner) playSound('championWin');
                 }, 3000);
             };
 
             const getTeamIcon = (team) => {
                 return team.icon || 'shield';
+            };
+
+            const handleTimeUp = (matchId) => {
+                const match = matches.find(m => m.id === matchId);
+                if (match) {
+                    // Mark match as time up
+                    setTimeUpMatches(prev => ({
+                        ...prev,
+                        [matchId]: true
+                    }));
+                    
+                    // Trigger time up animation
+                    setTimeout(() => {
+                        setTimeUpMatches(prev => ({
+                            ...prev,
+                            [matchId]: false
+                        }));
+                    }, 1000);
+                    
+                    // If draw, mark for penalty shootout
+                    if (match.score1 === match.score2) {
+                        setMatches(prev => prev.map(m => 
+                            m.id === matchId ? { ...m, isTimeUp: true } : m
+                        ));
+                    } else {
+                        // If not draw, mark as finished
+                        setMatches(prev => prev.map(m => 
+                            m.id === matchId ? { ...m, isFinished: true } : m
+                        ));
+                    }
+                }
+            };
+
+            const handlePenaltyComplete = (matchId, winningTeam) => {
+                setMatches(prev => prev.map(m => {
+                    if (m.id === matchId) {
+                        if (winningTeam === 1) {
+                            return { ...m, score1: m.score1 + 1, isFinished: true, isTimeUp: false };
+                        } else {
+                            return { ...m, score2: m.score2 + 1, isFinished: true, isTimeUp: false };
+                        }
+                    }
+                    return m;
+                }));
+                triggerConfetti();
+            };
+
+            const getMatchGoals = (matchId) => {
+                return goalsHistory[matchId] || [];
+            };
+
+            const getLatestGoals = (matchId, count = 3) => {
+                const goals = getMatchGoals(matchId);
+                return goals.slice(-count);
             };
 
             const archivedByRound = useMemo(() => {
@@ -370,6 +823,7 @@
                     if (firstWinner && !winnerTeam) {
                         setWinnerTeam(firstWinner);
                         triggerConfetti();
+                        playSound('championWin');
                     }
                 }
                 return sorted;
@@ -428,6 +882,14 @@
                             )}
                         </div>
 
+                        {/* Goal Notification */}
+                        {goalNotification && (
+                            <GoalNotification 
+                                teamName={goalNotification.teamName}
+                                minute={goalNotification.minute}
+                            />
+                        )}
+
                         {/* Matches Section */}
                         {currentTab === 'matches' && (
                             <div className="animate-in flex flex-col gap-10">
@@ -455,6 +917,7 @@
                                                 <button onClick={() => {
                                                     setMatches(prev => prev.map(m => m.round === parseInt(round) ? { ...m, isFinished: true } : m));
                                                     setTargetRound(parseInt(round) + 1);
+                                                    playSound('matchEnd');
                                                 }} className="bg-emerald-500 hover:bg-emerald-600 text-white px-8 py-3 rounded-2xl text-sm font-black transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-3 group active:scale-95">
                                                     <Icon name="check-circle" size={18} className="group-hover:rotate-12 transition-transform" />
                                                     إنهاء الجولة
@@ -463,46 +926,107 @@
 
                                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                                 {roundMatches.map(m => (
-                                                    <div key={m.id} className={`group relative p-1 rounded-[2.5rem] overflow-hidden transition-all duration-300 hover:shadow-2xl ${isDarkMode ? 'bg-slate-800/30' : 'bg-white shadow-xl shadow-slate-200/50'}`}>
+                                                    <div 
+                                                        key={m.id} 
+                                                        className={`group relative p-1 rounded-[2.5rem] overflow-hidden transition-all duration-300 hover:shadow-2xl ${timeUpMatches[m.id] ? 'time-up-animation' : ''} ${isDarkMode ? 'bg-slate-800/30' : 'bg-white shadow-xl shadow-slate-200/50'}`}
+                                                    >
                                                         {activeMatches[m.id] && <FireEffect />}
 
-                                                        <div className={`relative z-10 p-6 md:p-8 rounded-[2.3rem] match-card-glass flex items-center justify-between gap-4 h-full`}>
-                                                            <div className="flex-1 flex flex-col items-center gap-4 min-w-0">
-                                                                <div className="flex flex-col items-center gap-3 text-center w-full">
-                                                                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-800 flex items-center justify-center text-xl font-black text-slate-400 shadow-inner">
-                                                                        <Icon name={getTeamIcon(m.team1)} size={24} />
-                                                                    </div>
-                                                                    <div className="text-base font-black text-slate-900 dark:text-white truncate w-full">{m.team1.name}</div>
+                                                        <div className={`relative z-10 p-6 md:p-8 rounded-[2.3rem] match-card-glass ${m.isTimeUp ? 'bg-gradient-to-r from-amber-500/5 to-yellow-500/5 border-amber-500/20' : ''}`}>
+                                                            {/* Delete Match Button */}
+                                                            <button 
+                                                                onClick={() => deleteMatch(m.id)}
+                                                                className="absolute top-4 left-4 p-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl transition-all hover:scale-110"
+                                                            >
+                                                                <Icon name="trash-2" size={16} />
+                                                            </button>
+
+                                                            {/* Time Up Badge */}
+                                                            {m.isTimeUp && (
+                                                                <div className="absolute top-4 right-4 bg-amber-500 text-white px-3 py-1 rounded-full text-xs font-black flex items-center gap-2">
+                                                                    <Icon name="clock" size={12} />
+                                                                    انتهى الوقت
                                                                 </div>
-                                                                <div className="flex gap-2 w-full max-w-[120px]">
-                                                                    <button onClick={() => updateScore(m.id, 1, -1)} className="score-btn flex-1 h-10 bg-red-50 dark:bg-red-900/10 rounded-xl text-red-500 hover:bg-red-500 hover:text-white border border-red-100 dark:border-red-900/30"><Icon name="minus" size={14} className="mx-auto"/></button>
-                                                                    <button onClick={() => updateScore(m.id, 1, 1)} className="score-btn flex-[1.5] h-10 bg-blue-600 rounded-xl text-white shadow-lg shadow-blue-600/20"><Icon name="plus" size={14} className="mx-auto"/></button>
+                                                            )}
+
+                                                            <div className="flex items-center justify-between gap-4 h-full">
+                                                                <div className="flex-1 flex flex-col items-center gap-4 min-w-0">
+                                                                    <div className="flex flex-col items-center gap-3 text-center w-full">
+                                                                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-800 flex items-center justify-center text-xl font-black text-slate-400 shadow-inner">
+                                                                            <Icon name={getTeamIcon(m.team1)} size={24} />
+                                                                        </div>
+                                                                        <div className="text-base font-black text-slate-900 dark:text-white truncate w-full">{m.team1.name}</div>
+                                                                    </div>
+                                                                    <div className="flex gap-2 w-full max-w-[120px]">
+                                                                        <button onClick={() => updateScore(m.id, 1, -1)} className="score-btn flex-1 h-10 bg-red-50 dark:bg-red-900/10 rounded-xl text-red-500 hover:bg-red-500 hover:text-white border border-red-100 dark:border-red-900/30"><Icon name="minus" size={14} className="mx-auto"/></button>
+                                                                        <button onClick={() => updateScore(m.id, 1, 1)} className="score-btn flex-[1.5] h-10 bg-blue-600 rounded-xl text-white shadow-lg shadow-blue-600/20"><Icon name="plus" size={14} className="mx-auto"/></button>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="flex flex-col items-center justify-center gap-4 px-6 border-x border-slate-100 dark:border-slate-800/50">
+                                                                    <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl relative">
+                                                                        <div className="text-4xl font-black text-slate-900 dark:text-white w-10 text-center">{m.score1}</div>
+                                                                        <div className="flex flex-col items-center">
+                                                                            <span className="text-[10px] font-black text-blue-600 dark:text-blue-400 tracking-widest bg-blue-100 dark:bg-blue-900/30 px-2 rounded-md">VS</span>
+                                                                            {m.isTimeUp && (
+                                                                                <div className="mt-1 text-[8px] font-black text-amber-600 bg-amber-100 px-1 rounded">تعادل</div>
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="text-4xl font-black text-slate-900 dark:text-white w-10 text-center">{m.score2}</div>
+                                                                    </div>
+                                                                    <MatchTimer 
+                                                                        initialDuration={m.duration} 
+                                                                        isFinished={false} 
+                                                                        isDarkMode={isDarkMode} 
+                                                                        onTimeUp={() => handleTimeUp(m.id)}
+                                                                        onStateChange={(a) => setActiveMatches(prev => ({...prev, [m.id]: a}))}
+                                                                        matchId={m.id}
+                                                                        onGoalScored={() => {}}
+                                                                    />
+                                                                </div>
+
+                                                                <div className="flex-1 flex flex-col items-center gap-4 min-w-0">
+                                                                    <div className="flex flex-col items-center gap-3 text-center w-full">
+                                                                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-800 flex items-center justify-center text-xl font-black text-slate-400 shadow-inner">
+                                                                            <Icon name={getTeamIcon(m.team2)} size={24} />
+                                                                        </div>
+                                                                        <div className="text-base font-black text-slate-900 dark:text-white truncate w-full">{m.team2.name}</div>
+                                                                    </div>
+                                                                    <div className="flex gap-2 w-full max-w-[120px]">
+                                                                        <button onClick={() => updateScore(m.id, 2, 1)} className="score-btn flex-[1.5] h-10 bg-blue-600 rounded-xl text-white shadow-lg shadow-blue-600/20"><Icon name="plus" size={14} className="mx-auto"/></button>
+                                                                        <button onClick={() => updateScore(m.id, 2, -1)} className="score-btn flex-1 h-10 bg-red-50 dark:bg-red-900/10 rounded-xl text-red-500 hover:bg-red-500 hover:text-white border border-red-100 dark:border-red-900/30"><Icon name="minus" size={14} className="mx-auto"/></button>
+                                                                    </div>
                                                                 </div>
                                                             </div>
 
-                                                            <div className="flex flex-col items-center justify-center gap-4 px-6 border-x border-slate-100 dark:border-slate-800/50">
-                                                                <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl">
-                                                                    <div className="text-4xl font-black text-slate-900 dark:text-white w-10 text-center">{m.score1}</div>
-                                                                    <div className="flex flex-col items-center">
-                                                                        <span className="text-[10px] font-black text-blue-600 dark:text-blue-400 tracking-widest bg-blue-100 dark:bg-blue-900/30 px-2 rounded-md">VS</span>
+                                                            {/* Recent Goals Section */}
+                                                            {getMatchGoals(m.id).length > 0 && (
+                                                                <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800/50">
+                                                                    <div className="flex items-center justify-center gap-2 mb-2">
+                                                                        <Icon name="goal" size={16} className="text-amber-500" />
+                                                                        <span className="text-xs font-black text-amber-600">الأهداف الحديثة</span>
                                                                     </div>
-                                                                    <div className="text-4xl font-black text-slate-900 dark:text-white w-10 text-center">{m.score2}</div>
+                                                                    <div className="flex flex-wrap justify-center gap-2">
+                                                                        {getLatestGoals(m.id, 3).map((goal, idx) => (
+                                                                            <div 
+                                                                                key={idx} 
+                                                                                className="flex items-center gap-1 bg-amber-500/10 px-3 py-1 rounded-full text-xs font-bold text-amber-600"
+                                                                            >
+                                                                                <span>{goal.teamName}</span>
+                                                                                <span className="bg-amber-500/20 px-2 py-0.5 rounded-full">{goal.minute}'</span>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
                                                                 </div>
-                                                                <MatchTimer initialDuration={m.duration} isFinished={false} isDarkMode={isDarkMode} onTimeUp={() => {}} onStateChange={(a) => setActiveMatches(prev => ({...prev, [m.id]: a}))} />
-                                                            </div>
+                                                            )}
 
-                                                            <div className="flex-1 flex flex-col items-center gap-4 min-w-0">
-                                                                <div className="flex flex-col items-center gap-3 text-center w-full">
-                                                                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-800 flex items-center justify-center text-xl font-black text-slate-400 shadow-inner">
-                                                                        <Icon name={getTeamIcon(m.team2)} size={24} />
-                                                                    </div>
-                                                                    <div className="text-base font-black text-slate-900 dark:text-white truncate w-full">{m.team2.name}</div>
-                                                                </div>
-                                                                <div className="flex gap-2 w-full max-w-[120px]">
-                                                                    <button onClick={() => updateScore(m.id, 2, 1)} className="score-btn flex-[1.5] h-10 bg-blue-600 rounded-xl text-white shadow-lg shadow-blue-600/20"><Icon name="plus" size={14} className="mx-auto"/></button>
-                                                                    <button onClick={() => updateScore(m.id, 2, -1)} className="score-btn flex-1 h-10 bg-red-50 dark:bg-red-900/10 rounded-xl text-red-500 hover:bg-red-500 hover:text-white border border-red-100 dark:border-red-900/30"><Icon name="minus" size={14} className="mx-auto"/></button>
-                                                                </div>
-                                                            </div>
+                                                            {/* Penalty Shootout Section - Only show if time is up and it's a draw */}
+                                                            {m.isTimeUp && m.score1 === m.score2 && (
+                                                                <PenaltyShootoutSection 
+                                                                    match={m}
+                                                                    onPenaltyComplete={handlePenaltyComplete}
+                                                                />
+                                                            )}
                                                         </div>
                                                     </div>
                                                 ))}
@@ -555,6 +1079,7 @@
                                             if(newTeamName.trim()){ 
                                                 setTeams([...teams, { id: Date.now().toString(), name: newTeamName, icon: newTeamIcon }]); 
                                                 setNewTeamName(''); 
+                                                playSound('teamAdded');
                                             } 
                                         }} 
                                         className="bg-blue-600 text-white px-8 py-3 rounded-xl font-black active:scale-95 transition-all"
@@ -813,6 +1338,7 @@
                                             }]);
                                             setSelectedT1(''); setSelectedT2('');
                                             setShowCreator(false);
+                                            playSound('whistleStart');
                                         }
                                     }} className="w-full bg-blue-600 text-white p-5 rounded-2xl font-black text-sm shadow-xl shadow-blue-600/30 active:scale-95 transition-all flex items-center justify-center gap-2">
                                         <Icon name="swords" size={20}/> بدء المباراة
@@ -907,7 +1433,7 @@
                                                     </div>
                                                     <div className="coin-back flex flex-col items-center justify-center gap-2 bg-yellow-400 border-4 border-yellow-600">
                                                         <Icon name="coins" size={60} className="text-yellow-800" />
-                                                        <span className="font-black text-yellow-900">كتابة</span>
+                                                        <span className="font-black text-yellow-900">عملة 10</span>
                                                     </div>
                                                 </div>
                                             </div>
