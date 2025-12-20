@@ -161,52 +161,6 @@
             animation: goalPulse 0.8s ease-out;
         }
 
-        .penalty-modal-bg {
-            background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.95));
-        }
-
-        .penalty-shootout-grid {
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 8px;
-        }
-
-        .penalty-shot {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            font-size: 14px;
-            transition: all 0.3s ease;
-        }
-
-        .penalty-shot.success {
-            background: linear-gradient(135deg, #10b981, #059669);
-            color: white;
-            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
-        }
-
-        .penalty-shot.fail {
-            background: linear-gradient(135deg, #ef4444, #dc2626);
-            color: white;
-            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
-        }
-
-        .penalty-shot.pending {
-            background: rgba(148, 163, 184, 0.2);
-            color: rgba(148, 163, 184, 0.5);
-            border: 2px dashed rgba(148, 163, 184, 0.3);
-        }
-
-        .penalty-shot.current {
-            border: 3px solid #f59e0b;
-            box-shadow: 0 0 20px rgba(245, 158, 11, 0.5);
-            transform: scale(1.1);
-        }
-        
         .card-icon {
             animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
@@ -257,6 +211,21 @@
             { id: 'crown', icon: 'crown' },
             { id: 'target', icon: 'target' }
         ];
+
+        // --- NEW CLOCK COMPONENT ---
+        const DigitalClock = () => {
+            const [time, setTime] = useState(new Date());
+            useEffect(() => {
+                const timer = setInterval(() => setTime(new Date()), 1000);
+                return () => clearInterval(timer);
+            }, []);
+            return (
+                <div className="hidden md:flex flex-row-reverse items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg font-mono text-xs font-black text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 select-none">
+                    <Icon name="clock" size={14} />
+                    <span>{time.toLocaleTimeString('en-US', {hour12: false, hour: '2-digit', minute:'2-digit'})}</span>
+                </div>
+            );
+        };
 
         const FireEffect = () => {
             const [particles] = useState(() => Array.from({ length: 8 }));
@@ -394,7 +363,7 @@
             const [winnerTeam, setWinnerTeam] = useState(null);
 
             useEffect(() => {
-                const saved = localStorage.getItem('tournament_pro_data_v11'); // Increased version for cards/penalty update
+                const saved = localStorage.getItem('tournament_pro_data_v12'); // Version bumped for updates
                 if (saved) {
                     const parsed = JSON.parse(saved);
                     setTeams(parsed.teams || []);
@@ -407,7 +376,7 @@
             }, []);
 
             useEffect(() => {
-                localStorage.setItem('tournament_pro_data_v11', JSON.stringify({ 
+                localStorage.setItem('tournament_pro_data_v12', JSON.stringify({ 
                     teams, 
                     matches, 
                     settings, 
@@ -441,20 +410,16 @@
                         const field = team === 1 ? 'score1' : 'score2';
                         const newScore = Math.max(0, m[field] + delta);
                         
-                        // If goal scored (positive delta)
                         if (delta > 0) {
-                            // Determine sound based on mode
                             if (m.isPenaltyMode) {
                                 playSound('penaltySuccess');
                             } else {
                                 playSound('goalScore');
                             }
                             
-                            // Trigger goal animation
                             setGoalAnimation({ matchId, team, minute });
                             setTimeout(() => setGoalAnimation(null), 800);
                             
-                            // Record goal with minute
                             const matchTime = m.duration * 60 - (activeMatches[matchId]?.timeLeft || m.duration * 60);
                             const goalMinute = minute || Math.floor(matchTime / 60);
                             
@@ -472,10 +437,9 @@
                                 };
                             });
                         } else {
-                            // If miss/negative delta
                             if(m.isPenaltyMode && delta === 0) {
-                                playSound('penaltyFail'); // Just play sound for miss button
-                                return m; // No score change
+                                playSound('penaltyFail');
+                                return m;
                             }
                         }
                         
@@ -485,19 +449,28 @@
                 }));
             };
 
+            // --- UPDATED: Red Card finishes match ---
             const giveCard = (matchId, teamId, type) => {
                 setMatches(prev => prev.map(m => {
                     if (m.id === parseInt(matchId)) {
                         const cards = m.cards || { team1: [], team2: [] };
                         const teamKey = m.team1.id === teamId ? 'team1' : 'team2';
                         
-                        return {
+                        const updatedMatch = {
                             ...m,
                             cards: {
                                 ...cards,
                                 [teamKey]: [...(cards[teamKey] || []), { type, timestamp: Date.now() }]
                             }
                         };
+
+                        // Logic: Red Card ends match immediately
+                        if (type === 'red') {
+                            updatedMatch.isFinished = true;
+                            playSound('matchEnd');
+                        }
+                        
+                        return updatedMatch;
                     }
                     return m;
                 }));
@@ -542,7 +515,6 @@
                 setMatches(prev => prev.map(m => {
                     if (m.id === matchId) {
                         if (m.score1 === m.score2) {
-                            // Enter Penalty Mode
                             return { ...m, isPenaltyMode: true };
                         }
                     }
@@ -594,10 +566,6 @@
                 return sorted;
             }, [teams, matches, settings.winningPoints]);
 
-            const getMatchGoals = (matchId) => {
-                return goalsHistory[matchId] || [];
-            };
-
             const renderTeamCards = (match, teamKey) => {
                 const cards = match.cards?.[teamKey] || [];
                 return (
@@ -613,6 +581,21 @@
                 );
             };
 
+            // Helper for inline cards in Archive
+            const renderInlineCards = (cards) => {
+                if (!cards || cards.length === 0) return null;
+                return (
+                    <div className="flex gap-0.5 mx-1">
+                        {cards.map((card, idx) => (
+                            <span key={idx} title={card.type}>
+                                {card.type === 'yellow' && <div className="inline-block w-2 h-3 bg-yellow-400 rounded-sm border border-yellow-600/20" />}
+                                {card.type === 'red' && <div className="inline-block w-2 h-3 bg-red-500 rounded-sm border border-red-700/20" />}
+                            </span>
+                        ))}
+                    </div>
+                );
+            };
+
             return (
                 <div className="min-h-screen pb-24 transition-colors duration-300">
                     <nav className={`p-4 border-b sticky top-0 z-50 backdrop-blur-md transition-colors duration-300 ${isDarkMode ? 'bg-slate-900/80 border-slate-800' : 'bg-white/80 border-slate-200 shadow-sm'} flex justify-between items-center`}>
@@ -620,12 +603,17 @@
                             <div className="bg-blue-600 p-2 rounded-xl text-white shadow-lg"><Icon name="trophy" size={20} /></div>
                             <h1 className="text-lg font-black tracking-tight text-slate-900 dark:text-white"> البطولات الطوقي</h1>
                         </div>
-                        <button 
-                            onClick={() => setIsDarkMode(!isDarkMode)} 
-                            className={`p-2.5 rounded-xl transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-yellow-400' : 'bg-slate-100 text-slate-600'}`}
-                        >
-                            <Icon name={isDarkMode ? "sun" : "moon"} size={18} />
-                        </button>
+                        
+                        <div className="flex items-center gap-3">
+                            {/* CLOCK ADDED HERE */}
+                            <DigitalClock />
+                            <button 
+                                onClick={() => setIsDarkMode(!isDarkMode)} 
+                                className={`p-2.5 rounded-xl transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-yellow-400' : 'bg-slate-100 text-slate-600'}`}
+                            >
+                                <Icon name={isDarkMode ? "sun" : "moon"} size={18} />
+                            </button>
+                        </div>
                     </nav>
 
                     <main className="max-w-6xl mx-auto p-4 md:p-8">
@@ -647,7 +635,6 @@
                             {/* Action Buttons for Matches Tab */}
                             {currentTab === 'matches' && (
                                 <div className="w-full max-w-lg flex gap-3 animate-in">
-                                    {/* Card Button - Left Side */}
                                     <button
                                         onClick={() => setShowCardModal(true)}
                                         className="w-[72px] h-[72px] flex-none flex flex-col items-center justify-center gap-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-2xl shadow-lg transition-all active:scale-[0.98] border-b-4 border-slate-300 dark:border-slate-900 group"
@@ -660,7 +647,6 @@
                                         <span className="text-[10px] font-black">كرت</span>
                                     </button>
 
-                                    {/* Coin Toss Button */}
                                     <button
                                         onClick={() => setShowCoinToss(true)}
                                         className="w-[72px] h-[72px] flex-none flex flex-col items-center justify-center gap-1 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl shadow-xl shadow-amber-500/20 transition-all active:scale-[0.98] border-b-4 border-amber-700 group"
@@ -670,7 +656,6 @@
                                         <span className="text-[10px] font-black">قرعة</span>
                                     </button>
                                     
-                                    {/* Add Match Button */}
                                     <button 
                                         onClick={() => setShowCreator(true)}
                                         className="flex-1 flex items-center justify-center gap-3 p-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black text-sm shadow-xl shadow-blue-600/20 transition-all active:scale-[0.98] border-b-4 border-blue-800"
@@ -721,7 +706,6 @@
                                                     <div key={m.id} className={`group relative p-1 rounded-[2.5rem] overflow-hidden transition-all duration-300 hover:shadow-2xl ${isDarkMode ? 'bg-slate-800/30' : 'bg-white shadow-xl shadow-slate-200/50'}`}>
                                                         {activeMatches[m.id] && <FireEffect />}
 
-                                                        {/* Goal Animation Overlay */}
                                                         {goalAnimation?.matchId === m.id && (
                                                             <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
                                                                 <div className="goal-animation bg-gradient-to-r from-yellow-400/20 to-amber-500/20 w-full h-full rounded-[2.5rem] flex items-center justify-center">
@@ -733,7 +717,6 @@
                                                         )}
 
                                                         <div className={`relative z-10 p-6 md:p-8 rounded-[2.3rem] match-card-glass flex items-center justify-between gap-4 h-full`}>
-                                                            {/* Delete Match Button */}
                                                             <button 
                                                                 onClick={() => deleteMatch(m.id)}
                                                                 className="absolute top-4 left-4 p-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl transition-all hover:scale-110"
@@ -750,7 +733,6 @@
                                                                     {renderTeamCards(m, 'team1')}
                                                                 </div>
                                                                 
-                                                                {/* Controls - Team 1 */}
                                                                 {m.isPenaltyMode ? (
                                                                     <div className="flex gap-2 w-full max-w-[120px] animate-flip-in">
                                                                         <button onClick={() => updateScore(m.id, 1, 0)} className="flex-1 h-10 bg-red-500/10 rounded-full text-red-500 hover:bg-red-500 hover:text-white border border-red-500/20 flex items-center justify-center transition-all hover:scale-105 active:scale-95"><Icon name="x" size={18} /></button>
@@ -766,16 +748,12 @@
 
                                                             <div className="flex flex-col items-center justify-center gap-4 px-6 border-x border-slate-100 dark:border-slate-800/50">
                                                                 <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl relative min-w-[140px] justify-center">
-                                                                    {/* Penalty Mode Label */}
                                                                     {m.isPenaltyMode && (
                                                                         <div className="absolute -top-4 bg-amber-500 text-white text-[10px] font-black px-3 py-1 rounded-full shadow-lg shadow-amber-500/30 animate-in tracking-wider whitespace-nowrap">
                                                                             ركلات الترجيح
                                                                         </div>
                                                                     )}
 
-                                                                    {/* Goal Indicators */}
-                                                                    <div className="absolute -top-6 left-0 right-0 flex justify-center gap-1 opacity-0 pointer-events-none"></div>
-                                                                    
                                                                     <div className={`text-4xl font-black transition-colors ${m.isPenaltyMode ? 'text-amber-500' : 'text-slate-900 dark:text-white'} w-10 text-center`}>{m.score1}</div>
                                                                     <div className="flex flex-col items-center">
                                                                         <span className="text-[10px] font-black text-blue-600 dark:text-blue-400 tracking-widest bg-blue-100 dark:bg-blue-900/30 px-2 rounded-md">VS</span>
@@ -802,7 +780,6 @@
                                                                     {renderTeamCards(m, 'team2')}
                                                                 </div>
                                                                 
-                                                                {/* Controls - Team 2 */}
                                                                 {m.isPenaltyMode ? (
                                                                     <div className="flex gap-2 w-full max-w-[120px] animate-flip-in">
                                                                         <button onClick={() => updateScore(m.id, 2, 1)} className="flex-1 h-10 bg-emerald-500/10 rounded-full text-emerald-500 hover:bg-emerald-500 hover:text-white border border-emerald-500/20 flex items-center justify-center transition-all hover:scale-105 active:scale-95"><Icon name="check" size={18} /></button>
@@ -825,12 +802,10 @@
                             </div>
                         )}
 
-                        {/* Teams Tab - With Icon Selection */}
+                        {/* Teams Tab */}
                         {currentTab === 'teams' && (
                             <div className="animate-in space-y-6">
                                 <div className={`p-6 rounded-3xl ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'} border flex flex-col md:flex-row gap-3 shadow-sm relative`}>
-                                    
-                                    {/* Icon Selector Button */}
                                     <div className="relative">
                                         <button 
                                             onClick={() => setShowIconSelector(!showIconSelector)}
@@ -892,7 +867,7 @@
                             </div>
                         )}
 
-                        {/* Archive Tab - Enhanced Interactions */}
+                        {/* Archive Tab - UPDATED */}
                         {currentTab === 'archive' && (
                             <div className="animate-in space-y-12">
                                 {Object.keys(archivedByRound).length === 0 ? (
@@ -903,7 +878,6 @@
                                 ) : (
                                     Object.entries(archivedByRound).sort((a,b) => b[0] - a[0]).map(([round, roundMatches]) => (
                                         <div key={round} className="space-y-6">
-                                            {/* Enhanced Round Header */}
                                             <div className="flex justify-between items-center bg-white dark:bg-slate-900/50 p-6 rounded-3xl border dark:border-slate-800 shadow-sm">
                                                 <div className="flex items-center gap-3">
                                                     <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500">
@@ -912,7 +886,6 @@
                                                     <h2 className="font-black text-xl">الجولة <span className="text-blue-600">{round}</span></h2>
                                                 </div>
                                                 
-                                                {/* Confirm Delete Round Button */}
                                                 {confirmDeleteRound === round ? (
                                                     <div className="flex items-center gap-2 animate-in">
                                                         <span className="text-xs font-bold text-slate-400">حذف جميع المباريات؟</span>
@@ -940,43 +913,68 @@
                                             </div>
                                             
                                             <div className="space-y-4">
-                                                {roundMatches.map(m => (
-                                                    <div 
-                                                        key={m.id} 
-                                                        onClick={() => setActiveArchiveCard(activeArchiveCard === m.id ? null : m.id)}
-                                                        className={`relative p-6 md:px-12 rounded-[2rem] border overflow-hidden cursor-pointer transition-all duration-300 ${activeArchiveCard === m.id ? 'scale-[0.98] ring-4 ring-red-500/20 archive-card-active' : 'hover:scale-[1.01]'} ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'} flex items-center justify-between shadow-sm`}
-                                                    >
-                                                        <div className="flex-1 text-right font-black text-lg text-slate-900 dark:text-white truncate flex items-center gap-3">
-                                                            <span className="text-slate-400"><Icon name={getTeamIcon(m.team1)} size={18}/></span>
-                                                            {m.team1.name}
-                                                        </div>
-                                                        
-                                                        <div className="flex items-center gap-8 mx-8">
-                                                            <span className={`text-3xl font-black ${m.score1 > m.score2 ? 'text-emerald-500' : 'opacity-30'}`}>{m.score1}</span>
-                                                            <div className="flex flex-col items-center">
-                                                                <span className="text-[10px] font-black opacity-20 tracking-widest">VS</span>
-                                                                <div className="w-1 h-6 bg-slate-200 dark:bg-slate-800 rounded-full mt-1"></div>
+                                                {roundMatches.map(m => {
+                                                    const isDraw = m.score1 === m.score2;
+                                                    const winner = m.score1 > m.score2 ? 'team1' : (m.score2 > m.score1 ? 'team2' : null);
+
+                                                    return (
+                                                        <div 
+                                                            key={m.id} 
+                                                            onClick={() => setActiveArchiveCard(activeArchiveCard === m.id ? null : m.id)}
+                                                            className={`relative p-6 md:px-12 rounded-[2rem] border overflow-hidden cursor-pointer transition-all duration-300 ${activeArchiveCard === m.id ? 'scale-[0.98] ring-4 ring-red-500/20 archive-card-active' : 'hover:scale-[1.01]'} ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'} flex items-center justify-between shadow-sm`}
+                                                        >
+                                                            {/* Team 1 - Right Side */}
+                                                            <div className="flex-1 text-right font-black text-lg text-slate-900 dark:text-white truncate flex items-center gap-3">
+                                                                {/* Winner Checkmark */}
+                                                                {winner === 'team1' && (
+                                                                    <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30 animate-in">
+                                                                        <Icon name="check" size={14} strokeWidth={4} />
+                                                                    </div>
+                                                                )}
+                                                                <span className="text-slate-400"><Icon name={getTeamIcon(m.team1)} size={18}/></span>
+                                                                <span className={winner === 'team1' ? 'text-emerald-600 dark:text-emerald-400' : ''}>{m.team1.name}</span>
+                                                                {/* Inline Cards */}
+                                                                {renderInlineCards(m.cards?.team1)}
                                                             </div>
-                                                            <span className={`text-3xl font-black ${m.score2 > m.score1 ? 'text-emerald-500' : 'opacity-30'}`}>{m.score2}</span>
-                                                        </div>
+                                                            
+                                                            {/* Score & Draw Text - Center */}
+                                                            <div className="flex items-center gap-8 mx-8">
+                                                                <span className={`text-3xl font-black ${m.score1 > m.score2 ? 'text-emerald-500' : 'opacity-30'}`}>{m.score1}</span>
+                                                                <div className="flex flex-col items-center">
+                                                                    {/* Draw Indicator Text */}
+                                                                    {isDraw && <span className="text-slate-400 text-[10px] font-black mb-1 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">تعادل</span>}
+                                                                    
+                                                                    <span className="text-[10px] font-black opacity-20 tracking-widest">VS</span>
+                                                                    <div className="w-1 h-6 bg-slate-200 dark:bg-slate-800 rounded-full mt-1"></div>
+                                                                </div>
+                                                                <span className={`text-3xl font-black ${m.score2 > m.score1 ? 'text-emerald-500' : 'opacity-30'}`}>{m.score2}</span>
+                                                            </div>
 
-                                                        <div className="flex-1 text-left font-black text-lg text-slate-900 dark:text-white truncate flex items-center gap-3 justify-end">
-                                                            {m.team2.name}
-                                                            <span className="text-slate-400"><Icon name={getTeamIcon(m.team2)} size={18}/></span>
-                                                        </div>
+                                                            {/* Team 2 - Left Side */}
+                                                            <div className="flex-1 text-left font-black text-lg text-slate-900 dark:text-white truncate flex items-center gap-3 justify-end">
+                                                                {renderInlineCards(m.cards?.team2)}
+                                                                <span className={winner === 'team2' ? 'text-emerald-600 dark:text-emerald-400' : ''}>{m.team2.name}</span>
+                                                                <span className="text-slate-400"><Icon name={getTeamIcon(m.team2)} size={18}/></span>
+                                                                {/* Winner Checkmark */}
+                                                                {winner === 'team2' && (
+                                                                    <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30 animate-in">
+                                                                        <Icon name="check" size={14} strokeWidth={4} />
+                                                                    </div>
+                                                                )}
+                                                            </div>
 
-                                                        {/* Delete Overlay */}
-                                                        <div className="archive-card-overlay">
-                                                            <button 
-                                                                onClick={(e) => { e.stopPropagation(); deleteMatch(m.id); }}
-                                                                className="delete-btn-pop bg-red-500 hover:bg-red-600 text-white px-8 py-4 rounded-2xl font-black shadow-2xl flex items-center gap-2 transform transition-transform hover:scale-110 active:scale-95"
-                                                            >
-                                                                <Icon name="trash-2" size={20} />
-                                                                حذف المباراة
-                                                            </button>
+                                                            <div className="archive-card-overlay">
+                                                                <button 
+                                                                    onClick={(e) => { e.stopPropagation(); deleteMatch(m.id); }}
+                                                                    className="delete-btn-pop bg-red-500 hover:bg-red-600 text-white px-8 py-4 rounded-2xl font-black shadow-2xl flex items-center gap-2 transform transition-transform hover:scale-110 active:scale-95"
+                                                                >
+                                                                    <Icon name="trash-2" size={20} />
+                                                                    حذف المباراة
+                                                                </button>
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                ))}
+                                                    );
+                                                })}
                                             </div>
                                         </div>
                                     ))
