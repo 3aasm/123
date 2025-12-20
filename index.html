@@ -212,7 +212,7 @@
             { id: 'target', icon: 'target' }
         ];
 
-        // --- NEW CLOCK COMPONENT ---
+        // --- UPDATED CLOCK COMPONENT (Removed 'hidden md:flex' so it shows on mobile) ---
         const DigitalClock = () => {
             const [time, setTime] = useState(new Date());
             useEffect(() => {
@@ -220,7 +220,7 @@
                 return () => clearInterval(timer);
             }, []);
             return (
-                <div className="hidden md:flex flex-row-reverse items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg font-mono text-xs font-black text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 select-none">
+                <div className="flex flex-row-reverse items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg font-mono text-xs font-black text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 select-none">
                     <Icon name="clock" size={14} />
                     <span>{time.toLocaleTimeString('en-US', {hour12: false, hour: '2-digit', minute:'2-digit'})}</span>
                 </div>
@@ -363,7 +363,7 @@
             const [winnerTeam, setWinnerTeam] = useState(null);
 
             useEffect(() => {
-                const saved = localStorage.getItem('tournament_pro_data_v12'); // Version bumped for updates
+                const saved = localStorage.getItem('tournament_pro_data_v13'); // Bumped version
                 if (saved) {
                     const parsed = JSON.parse(saved);
                     setTeams(parsed.teams || []);
@@ -376,7 +376,7 @@
             }, []);
 
             useEffect(() => {
-                localStorage.setItem('tournament_pro_data_v12', JSON.stringify({ 
+                localStorage.setItem('tournament_pro_data_v13', JSON.stringify({ 
                     teams, 
                     matches, 
                     settings, 
@@ -449,7 +449,7 @@
                 }));
             };
 
-            // --- UPDATED: Red Card finishes match ---
+            // --- UPDATED: Red Card Logic (Finishes Match + Sets Forced Winner) ---
             const giveCard = (matchId, teamId, type) => {
                 setMatches(prev => prev.map(m => {
                     if (m.id === parseInt(matchId)) {
@@ -464,9 +464,13 @@
                             }
                         };
 
-                        // Logic: Red Card ends match immediately
+                        // Logic: Red Card ends match immediately and makes opponent winner
                         if (type === 'red') {
                             updatedMatch.isFinished = true;
+                            // Identify Opponent ID
+                            const opponentId = m.team1.id === teamId ? m.team2.id : m.team1.id;
+                            updatedMatch.forcedWinner = opponentId;
+                            updatedMatch.winReason = 'red_card';
                             playSound('matchEnd');
                         }
                         
@@ -538,6 +542,7 @@
                 }, {});
             }, [matches]);
 
+            // --- UPDATED Leaderboard Logic (Respects Forced Winner) ---
             const leaderboard = useMemo(() => {
                 const stats = teams.reduce((acc, team) => {
                     acc[team.id] = { id: team.id, name: team.name, icon: team.icon, p: 0, gd: 0, pts: 0 };
@@ -549,9 +554,16 @@
                         s1.p++; s2.p++;
                         s1.gd += (m.score1 - m.score2);
                         s2.gd += (m.score2 - m.score1);
-                        if (m.score1 > m.score2) s1.pts += 3;
-                        else if (m.score1 < m.score2) s2.pts += 3;
-                        else { s1.pts += 1; s2.pts += 1; }
+                        
+                        // Check for forced winner (Red Card)
+                        if (m.forcedWinner) {
+                            if (m.forcedWinner === s1.id) s1.pts += 3;
+                            else if (m.forcedWinner === s2.id) s2.pts += 3;
+                        } else {
+                            if (m.score1 > m.score2) s1.pts += 3;
+                            else if (m.score1 < m.score2) s2.pts += 3;
+                            else { s1.pts += 1; s2.pts += 1; }
+                        }
                     }
                 });
                 const sorted = Object.values(stats).sort((a, b) => b.pts - a.pts || b.gd - a.gd);
@@ -581,7 +593,6 @@
                 );
             };
 
-            // Helper for inline cards in Archive
             const renderInlineCards = (cards) => {
                 if (!cards || cards.length === 0) return null;
                 return (
@@ -605,7 +616,7 @@
                         </div>
                         
                         <div className="flex items-center gap-3">
-                            {/* CLOCK ADDED HERE */}
+                            {/* CLOCK */}
                             <DigitalClock />
                             <button 
                                 onClick={() => setIsDarkMode(!isDarkMode)} 
@@ -867,7 +878,7 @@
                             </div>
                         )}
 
-                        {/* Archive Tab - UPDATED */}
+                        {/* Archive Tab - UPDATED with Red Card Win Logic */}
                         {currentTab === 'archive' && (
                             <div className="animate-in space-y-12">
                                 {Object.keys(archivedByRound).length === 0 ? (
@@ -914,8 +925,15 @@
                                             
                                             <div className="space-y-4">
                                                 {roundMatches.map(m => {
-                                                    const isDraw = m.score1 === m.score2;
-                                                    const winner = m.score1 > m.score2 ? 'team1' : (m.score2 > m.score1 ? 'team2' : null);
+                                                    const isDraw = m.score1 === m.score2 && !m.forcedWinner;
+                                                    
+                                                    // Determine winner (Check forced winner first)
+                                                    let winner = null;
+                                                    if (m.forcedWinner) {
+                                                        winner = m.forcedWinner === m.team1.id ? 'team1' : 'team2';
+                                                    } else {
+                                                        winner = m.score1 > m.score2 ? 'team1' : (m.score2 > m.score1 ? 'team2' : null);
+                                                    }
 
                                                     return (
                                                         <div 
@@ -925,10 +943,15 @@
                                                         >
                                                             {/* Team 1 - Right Side */}
                                                             <div className="flex-1 text-right font-black text-lg text-slate-900 dark:text-white truncate flex items-center gap-3">
-                                                                {/* Winner Checkmark */}
+                                                                {/* Winner Checkmark (Yellow if Red Card Forced, Green otherwise) */}
                                                                 {winner === 'team1' && (
-                                                                    <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30 animate-in">
-                                                                        <Icon name="check" size={14} strokeWidth={4} />
+                                                                    <div className="flex flex-col items-center">
+                                                                        <div className={`w-6 h-6 rounded-full ${m.winReason === 'red_card' ? 'bg-yellow-400 text-slate-900' : 'bg-emerald-500 text-white'} flex items-center justify-center shadow-lg animate-in`}>
+                                                                            <Icon name="check" size={14} strokeWidth={4} />
+                                                                        </div>
+                                                                        {m.winReason === 'red_card' && (
+                                                                            <span className="text-[8px] font-bold text-red-500 mt-1 max-w-[80px] text-center leading-tight">فاز بسبب تلقي الخصم كرت أحمر</span>
+                                                                        )}
                                                                     </div>
                                                                 )}
                                                                 <span className="text-slate-400"><Icon name={getTeamIcon(m.team1)} size={18}/></span>
@@ -939,7 +962,7 @@
                                                             
                                                             {/* Score & Draw Text - Center */}
                                                             <div className="flex items-center gap-8 mx-8">
-                                                                <span className={`text-3xl font-black ${m.score1 > m.score2 ? 'text-emerald-500' : 'opacity-30'}`}>{m.score1}</span>
+                                                                <span className={`text-3xl font-black ${winner === 'team1' ? 'text-emerald-500' : 'opacity-30'}`}>{m.score1}</span>
                                                                 <div className="flex flex-col items-center">
                                                                     {/* Draw Indicator Text */}
                                                                     {isDraw && <span className="text-slate-400 text-[10px] font-black mb-1 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">تعادل</span>}
@@ -947,7 +970,7 @@
                                                                     <span className="text-[10px] font-black opacity-20 tracking-widest">VS</span>
                                                                     <div className="w-1 h-6 bg-slate-200 dark:bg-slate-800 rounded-full mt-1"></div>
                                                                 </div>
-                                                                <span className={`text-3xl font-black ${m.score2 > m.score1 ? 'text-emerald-500' : 'opacity-30'}`}>{m.score2}</span>
+                                                                <span className={`text-3xl font-black ${winner === 'team2' ? 'text-emerald-500' : 'opacity-30'}`}>{m.score2}</span>
                                                             </div>
 
                                                             {/* Team 2 - Left Side */}
@@ -955,10 +978,15 @@
                                                                 {renderInlineCards(m.cards?.team2)}
                                                                 <span className={winner === 'team2' ? 'text-emerald-600 dark:text-emerald-400' : ''}>{m.team2.name}</span>
                                                                 <span className="text-slate-400"><Icon name={getTeamIcon(m.team2)} size={18}/></span>
-                                                                {/* Winner Checkmark */}
+                                                                {/* Winner Checkmark (Yellow if Red Card Forced, Green otherwise) */}
                                                                 {winner === 'team2' && (
-                                                                    <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30 animate-in">
-                                                                        <Icon name="check" size={14} strokeWidth={4} />
+                                                                    <div className="flex flex-col items-center">
+                                                                        <div className={`w-6 h-6 rounded-full ${m.winReason === 'red_card' ? 'bg-yellow-400 text-slate-900' : 'bg-emerald-500 text-white'} flex items-center justify-center shadow-lg animate-in`}>
+                                                                            <Icon name="check" size={14} strokeWidth={4} />
+                                                                        </div>
+                                                                        {m.winReason === 'red_card' && (
+                                                                            <span className="text-[8px] font-bold text-red-500 mt-1 max-w-[80px] text-center leading-tight">فاز بسبب تلقي الخصم كرت أحمر</span>
+                                                                        )}
                                                                     </div>
                                                                 )}
                                                             </div>
